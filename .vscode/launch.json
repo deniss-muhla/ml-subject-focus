@@ -9,7 +9,6 @@
             "type": "python",
             "request": "launch",
             "python": "/opt/venv/bin/python3",
-            "preLaunchTask": "venv",
             "program": "${file}",
             "console": "integratedTerminal",
             "justMyCode": true

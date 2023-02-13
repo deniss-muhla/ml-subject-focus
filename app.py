@@ -44,20 +44,48 @@ def get_depth_image(image):
 
     return img
 
-    return result
 
-
-def process_image(image, components, exposure_gamma):
+def blur_with_depth_image(image, depth_image, components, exposure_gamma):
     cv_image = convert_from_image_to_cv2(image)
+    cv_depth_image = convert_from_image_to_cv2(depth_image)
+    neg_cv_depth_image = ~cv_depth_image
 
-    depth_map = get_depth_image(image)
-    cv_depth_map = convert_from_image_to_cv2(depth_map)
-    cv_depth_map = ~cv_depth_map
+    # apply blur
+    cv_img = lens_blur_with_depth_map(
+        img=cv_image,
+        depth_map=neg_cv_depth_image,
+        components=components,
+        exposure_gamma=exposure_gamma,
+        num_layers=10,
+        min_blur=1,
+        max_blur=100
+    )
+    img = convert_from_cv2_to_image(cv_img)
+
+    return img
+
+
+def process_image(image, components, exposure_gamma, state):
+    if state is None or not state['image'] == image:
+        state = dict(
+            image=image,
+            cv_image=None,
+            cv_depth_map=None
+        )
+
+    if state['cv_image'] is None:
+        state['cv_image'] = convert_from_image_to_cv2(state['image'])
+
+    if state['cv_depth_map'] is None:
+        depth_map = get_depth_image(state['image'])
+        state['cv_depth_map'] = convert_from_image_to_cv2(depth_map)
+
+    neg_cv_depth_map = ~state['cv_depth_map']
 
     # apply blur
     cv_blur_img = lens_blur_with_depth_map(
-        img=cv_image,
-        depth_map=cv_depth_map,
+        img=state['cv_image'],
+        depth_map=neg_cv_depth_map,
         components=components,
         exposure_gamma=exposure_gamma,
         num_layers=10,
@@ -66,23 +94,37 @@ def process_image(image, components, exposure_gamma):
     )
     img = convert_from_cv2_to_image(cv_blur_img)
 
-    return img
+    return img, state
 
 
-title = "Subject focus"
-description = "Focus to subject using depth estimation with DPT."
-examples = [[]]
+with gr.Blocks() as app:
+    state_image = gr.State(None)
+    with gr.Row():
+        with gr.Column():
+            input_image = gr.inputs.Image(type="pil", label="source")
+            btn_get_depth = gr.Button("Estimate depth")
+            depth_image = gr.inputs.Image(type="pil", label="predicted depth")
+            # paint = gr.Paint()
+            # paint = gr.ImageMask()
+            # paint = gr.ImagePaint()
+        with gr.Column():
+            components = gr.Slider(minimum=1, maximum=10,
+                                   step=1, label="components")
+            exposure_gamma = gr.Slider(
+                minimum=1, maximum=10, step=1, label="exposure gamma")
+            btn_process = gr.Button("Focus subject")
+            output_image = gr.outputs.Image(
+                type="pil", label="focused")
 
-iface = gr.Interface(fn=process_image,
-                     inputs=[
-                         gr.inputs.Image(type="pil"),
-                         gr.Slider(minimum=1, maximum=10, step=1),
-                         gr.Slider(minimum=1, maximum=10, step=1),
-                     ],
-                     outputs=gr.outputs.Image(
-                         type="pil", label="predicted depth"),
-                     title=title,
-                     description=description,
-                     examples=examples,
-                     enable_queue=True)
-iface.launch(debug=True)
+    btn_get_depth.click(
+        get_depth_image,
+        [input_image],
+        [depth_image]
+    )
+
+    btn_process.click(
+        blur_with_depth_image,
+        [input_image, depth_image, components, exposure_gamma],
+        [output_image]
+    )
+app.launch()
